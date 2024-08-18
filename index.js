@@ -1,19 +1,18 @@
 require("dotenv").config();
 const WebSocket = require("ws");
-const axios = require("axios"); // Ensure axios is installed and required
-const { OpenAI } = require("openai");
+const axios = require("axios");
 const { Deepgram } = require("@deepgram/sdk");
+const OpenAI = require("openai");
+const {
+  Room,
+  RemoteVideoTrack,
+  ChatManager,
+  ChatMessage,
+  VideoStream,
+} = require("@livekit/node");
 
-// Initialize OpenAI and Deepgram clients
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-// Initialize Deepgram with the correct format
 const deepgram = new Deepgram(process.env.DEEPGRAM_API_KEY);
-
-// WebSocket connection
-const ws = new WebSocket(process.env.LIVEKIT_URL);
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 class AssistantFunction {
   async image(userMsg) {
@@ -22,88 +21,133 @@ class AssistantFunction {
   }
 }
 
-async function entrypoint() {
-  ws.on("open", () => {
-    console.log("Connected to LiveKit");
-    joinRoom();
-  });
+async function getVideoTrack(room) {
+  const videoTrackFuture = new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject("Timed out waiting for video track"),
+      10000
+    );
 
-  ws.on("message", async (data) => {
-    const msg = JSON.parse(data);
-    if (msg.type === "message_received") {
-      await _answer(msg.message, false);
-    } else if (msg.type === "function_calls_finished") {
-      const userMsg = msg.called_functions[0]?.call_info.arguments.user_msg;
-      if (userMsg) {
-        await _answer(userMsg, true);
-      } else {
-        console.log("No user message found in function call arguments");
+    for (const participant of Object.values(room.remoteParticipants)) {
+      for (const trackPublication of Object.values(
+        participant.trackPublications
+      )) {
+        if (
+          trackPublication.track &&
+          trackPublication.track instanceof RemoteVideoTrack
+        ) {
+          clearTimeout(timer);
+          resolve(trackPublication.track);
+          console.log(`Using video track ${trackPublication.track.sid}`);
+          return;
+        }
       }
     }
   });
 
-  async function joinRoom() {
-    try {
-      const response = await axios.post(`${process.env.LIVEKIT_URL}/join`, {
-        apiKey: process.env.LIVEKIT_API_KEY,
-        secret: process.env.LIVEKIT_API_SECRET,
-      });
-      console.log(`Joined room: ${response.data.name}`);
-    } catch (error) {
-      console.error(`Error joining room: ${error.message}`);
-    }
+  try {
+    return await videoTrackFuture;
+  } catch (error) {
+    console.error(error);
+    return null;
   }
+}
 
-  const assistantFunction = new AssistantFunction();
+async function entrypoint(ctx) {
+  await ctx.connect();
+  console.log(`Room name: ${ctx.room.name}`);
 
   const chatContext = {
     messages: [
       {
         role: "system",
-        content: "Your name is Alloy. You are a funny, witty bot...",
+        content:
+          "Your name is Alloy. You are a funny, witty bot. Your interface with users will be voice and vision. Respond with short and concise answers. Avoid using unpronouncable punctuation or emojis.",
       },
     ],
   };
 
+  const gpt = new openai.ChatCompletion({
+    model: "gpt-4",
+  });
+
+  const latestImage = null;
+
+  const assistantFunction = new AssistantFunction();
+
   async function _answer(text, useImage = false) {
     console.log(`Answering: ${text}`);
     const content = [text];
-    if (useImage) {
-      const latestImage = await getVideoTrack(); // Implement this method as needed
-      if (latestImage) {
-        content.push({ image: latestImage });
-      }
+    if (useImage && latestImage) {
+      content.push({ image: latestImage });
     }
     chatContext.messages.push({ role: "user", content });
 
     try {
-      const response = await openai.chat.completions.create({
-        model: "gpt-4",
+      const response = await gpt.create({
         messages: chatContext.messages,
       });
+
       const stream = response.choices[0].message.content;
       console.log(stream);
 
-      // Update this part based on the new SDK documentation
       const transcription = await deepgram.transcription.preRecorded({
-        audio_url: stream, // Ensure this is correct as per new SDK
+        audio_url: stream,
       });
+
       console.log(transcription);
     } catch (err) {
       console.error(`Error answering: ${err.message}`);
     }
   }
 
+  const chat = new ChatManager(ctx.room);
+
+  chat.on("message_received", (msg) => {
+    if (msg.message) {
+      _answer(msg.message, false);
+    }
+  });
+
+  assistantFunction.on("function_calls_finished", async (calledFunctions) => {
+    if (!calledFunctions.length) return;
+
+    const userMsg = calledFunctions[0]?.callInfo.arguments?.user_msg;
+    if (userMsg) {
+      await _answer(userMsg, true);
+    } else {
+      console.log("No user message found in function call arguments");
+    }
+  });
+
+  assistantFunction.start(ctx.room);
+
   await _answer("Hi there! How can I help?", true);
 
-  while (true) {
-    const videoTrack = await getVideoTrack();
+  while (ctx.room.connectionState === "connected") {
+    const videoTrack = await getVideoTrack(ctx.room);
     if (videoTrack) {
-      // Process the video stream
+      for await (const event of VideoStream(videoTrack)) {
+        latestImage = event.frame;
+      }
     } else {
-      await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait before retrying
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
 }
 
-entrypoint().catch(console.error);
+const ws = new WebSocket(process.env.LIVEKIT_URL);
+
+ws.on("open", () => {
+  console.log("Connected to LiveKit");
+  // Call entrypoint here with the necessary context
+});
+
+ws.on("message", (data) => {
+  const msg = JSON.parse(data);
+  if (msg.type === "message_received") {
+    // Handle message received
+  } else if (msg.type === "function_calls_finished") {
+    // Handle function calls finished
+  }
+});
