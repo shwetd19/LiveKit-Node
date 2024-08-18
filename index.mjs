@@ -1,16 +1,33 @@
-import dotenv from "dotenv";
-import WebSocket from "ws";
-import axios from "axios";
-import { Deepgram } from "@deepgram/sdk"; // Ensure the latest Deepgram SDK is installed
+import { Deepgram } from "@deepgram/sdk";
 import OpenAI from "openai";
-import { Room } from "livekit-server-sdk";
+import { LiveKitClient } from "livekit-client";
+import {
+  VoiceAssistant,
+  ChatContext,
+  ChatMessage,
+  ChatImage,
+} from "livekit-sdk"; // Assuming a similar package or create a custom implementation
 
-dotenv.config();
+// Configure environment variables
+const {
+  LIVEKIT_URL,
+  LIVEKIT_API_KEY,
+  LIVEKIT_API_SECRET,
+  DEEPGRAM_API_KEY,
+  OPENAI_API_KEY,
+} = process.env;
 
-// Initialize Deepgram with the correct method
-const deepgram = new Deepgram(process.env.DEEPGRAM_API_KEY);
+// Initialize Deepgram
+const deepgram = new Deepgram(DEEPGRAM_API_KEY);
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Initialize OpenAI
+const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
+
+// Create a LiveKit Client
+const livekitClient = new LiveKitClient(LIVEKIT_URL, {
+  apiKey: LIVEKIT_API_KEY,
+  apiSecret: LIVEKIT_API_SECRET,
+});
 
 class AssistantFunction {
   async image(userMsg) {
@@ -20,94 +37,85 @@ class AssistantFunction {
 }
 
 async function getVideoTrack(room) {
-  const videoTrackFuture = new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject("Timed out waiting for video track"),
-      10000
-    );
-
+  // Implement function to get the first video track from the room
+  return new Promise((resolve, reject) => {
     for (const participant of Object.values(room.remoteParticipants)) {
-      for (const trackPublication of Object.values(
-        participant.trackPublications
-      )) {
-        if (trackPublication.track) {
-          clearTimeout(timer);
-          resolve(trackPublication.track);
-          console.log(`Using video track ${trackPublication.track.sid}`);
+      for (const track of Object.values(participant.trackPublications)) {
+        if (track.track && track.track.kind === "video") {
+          resolve(track.track);
+          console.log(`Using video track ${track.track.sid}`);
           return;
         }
       }
     }
+    setTimeout(
+      () => reject(new Error("Timed out waiting for video track")),
+      10000
+    );
   });
-
-  try {
-    return await videoTrackFuture;
-  } catch (error) {
-    console.error(error);
-    return null;
-  }
 }
 
 async function entrypoint(ctx) {
   await ctx.connect();
   console.log(`Room name: ${ctx.room.name}`);
 
-  const chatContext = {
+  const chatContext = new ChatContext({
     messages: [
-      {
+      new ChatMessage({
         role: "system",
         content:
           "Your name is Alloy. You are a funny, witty bot. Your interface with users will be voice and vision. Respond with short and concise answers. Avoid using unpronounceable punctuation or emojis.",
-      },
+      }),
     ],
-  };
+  });
 
   const gpt = openai.chat.completions.create.bind(openai.chat.completions);
 
-  let latestImage = null;
-
+  const latestImage = null;
   const assistantFunction = new AssistantFunction();
+
+  const assistant = new VoiceAssistant({
+    vad: silero.VAD.load(),
+    stt: deepgram.transcription,
+    llm: gpt,
+    tts: new openai.TTS(),
+    fnc_ctx: assistantFunction,
+    chat_ctx: chatContext,
+  });
+
+  const chat = new ChatManager(ctx.room);
 
   async function _answer(text, useImage = false) {
     console.log(`Answering: ${text}`);
     const content = [text];
     if (useImage && latestImage) {
-      content.push({ image: latestImage });
+      content.push(new ChatImage({ image: latestImage }));
     }
-    chatContext.messages.push({ role: "user", content });
+    chatContext.messages.push(new ChatMessage({ role: "user", content }));
 
     try {
       const response = await gpt({
         model: "gpt-4",
         messages: chatContext.messages,
       });
-
       const stream = response.choices[0].message.content;
       console.log(stream);
-
-      // Update to the new Deepgram SDK API
-      const transcription = await deepgram.transcription.preRecorded({
-        audio_url: stream,
-      });
-
-      console.log(transcription);
+      await assistant.say(stream, { allowInterruptions: true });
     } catch (err) {
       console.error(`Error answering: ${err.message}`);
     }
   }
 
-  const chat = new Room(ctx.room);
-
-  chat.on("message_received", (msg) => {
+  chat.on("message_received", async (msg) => {
     if (msg.message) {
-      _answer(msg.message, false);
+      await _answer(msg.message, false);
     }
   });
 
-  assistantFunction.on("function_calls_finished", async (calledFunctions) => {
+  assistant.on("function_calls_finished", async (calledFunctions) => {
     if (!calledFunctions.length) return;
 
-    const userMsg = calledFunctions[0]?.callInfo.arguments?.user_msg;
+    const userMsg = calledFunctions[0]?.callInfo?.arguments?.user_msg;
     if (userMsg) {
       await _answer(userMsg, true);
     } else {
@@ -115,14 +123,15 @@ async function entrypoint(ctx) {
     }
   });
 
-  assistantFunction.start(ctx.room);
+  assistant.start(ctx.room);
 
   await _answer("Hi there! How can I help?", true);
 
   while (ctx.room.connectionState === "connected") {
     const videoTrack = await getVideoTrack(ctx.room);
+
     if (videoTrack) {
-      for await (const event of videoTrack) {
+      for await (const event of videoTrack.stream()) {
         latestImage = event.frame;
       }
     } else {
@@ -131,19 +140,12 @@ async function entrypoint(ctx) {
   }
 }
 
-const ws = new WebSocket(process.env.LIVEKIT_URL);
+// Assuming the CLI and WorkerOptions are available or you can use a custom implementation
+const cli = {
+  runApp: async (options) => {
+    const ctx = await livekitClient.connect(); // Connect to LiveKit
+    await entrypoint(ctx);
+  },
+};
 
-ws.on("open", () => {
-  console.log("Connected to LiveKit");
-  // Assuming `ctx` is defined and initialized properly
-  // Call entrypoint here with the necessary context
-});
-
-ws.on("message", (data) => {
-  const msg = JSON.parse(data);
-  if (msg.type === "message_received") {
-    // Handle message received
-  } else if (msg.type === "function_calls_finished") {
-    // Handle function calls finished
-  }
-});
+cli.runApp({ entrypoint_fnc: entrypoint });
