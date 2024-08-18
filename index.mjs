@@ -3,11 +3,12 @@ import WebSocket from "ws";
 import axios from "axios";
 import { Deepgram } from "@deepgram/sdk";
 import OpenAI from "openai";
-import { Room } from "livekit-server-sdk"; // Removed RemoteTrack import
+import { Room } from "livekit-server-sdk";
 
 dotenv.config();
 
 const deepgram = new Deepgram(process.env.DEEPGRAM_API_KEY);
+
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 class AssistantFunction {
@@ -28,7 +29,6 @@ async function getVideoTrack(room) {
       for (const trackPublication of Object.values(
         participant.trackPublications
       )) {
-        // Adjusted code based on current SDK API
         if (trackPublication.track) {
           clearTimeout(timer);
           resolve(trackPublication.track);
