@@ -3,7 +3,7 @@ import WebSocket from "ws";
 import axios from "axios";
 import { Deepgram } from "@deepgram/sdk";
 import OpenAI from "openai";
-import { Room, RemoteTrack } from "livekit-server-sdk";
+import { Room } from "livekit-server-sdk"; // Removed RemoteTrack import
 
 dotenv.config();
 
@@ -28,10 +28,8 @@ async function getVideoTrack(room) {
       for (const trackPublication of Object.values(
         participant.trackPublications
       )) {
-        if (
-          trackPublication.track &&
-          trackPublication.track instanceof RemoteTrack
-        ) {
+        // Adjusted code based on current SDK API
+        if (trackPublication.track) {
           clearTimeout(timer);
           resolve(trackPublication.track);
           console.log(`Using video track ${trackPublication.track.sid}`);
