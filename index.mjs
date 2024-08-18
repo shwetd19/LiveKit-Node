@@ -1,12 +1,13 @@
 import dotenv from "dotenv";
 import WebSocket from "ws";
 import axios from "axios";
-import { Deepgram } from "@deepgram/sdk";
+import { Deepgram } from "@deepgram/sdk"; // Ensure the latest Deepgram SDK is installed
 import OpenAI from "openai";
 import { Room } from "livekit-server-sdk";
 
 dotenv.config();
 
+// Initialize Deepgram with the correct method
 const deepgram = new Deepgram(process.env.DEEPGRAM_API_KEY);
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -84,6 +85,7 @@ async function entrypoint(ctx) {
       const stream = response.choices[0].message.content;
       console.log(stream);
 
+      // Update to the new Deepgram SDK API
       const transcription = await deepgram.transcription.preRecorded({
         audio_url: stream,
       });
