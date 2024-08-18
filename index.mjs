@@ -1,14 +1,16 @@
-require("dotenv").config();
-const WebSocket = require("ws");
-const axios = require("axios");
-const { Deepgram } = require("@deepgram/sdk");
-const OpenAI = require("openai");
-const {
+import dotenv from "dotenv";
+import WebSocket from "ws";
+import axios from "axios";
+import { Deepgram } from "@deepgram/sdk";
+import OpenAI from "openai";
+import {
   Room,
   Participant,
   TrackPublication,
   RemoteTrack,
-} = require("livekit-server-sdk");
+} from "livekit-server-sdk";
+
+dotenv.config();
 
 const deepgram = new Deepgram(process.env.DEEPGRAM_API_KEY);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
