@@ -1,14 +1,9 @@
-import dotenv from "dotenv";
-import WebSocket from "ws";
-import axios from "axios";
-import { Deepgram } from "@deepgram/sdk";
-import OpenAI from "openai";
-import {
-  Room,
-  Participant,
-  TrackPublication,
-  RemoteTrack,
-} from "livekit-server-sdk";
+import dotenv from 'dotenv';
+import WebSocket from 'ws';
+import axios from 'axios';
+import { Deepgram } from '@deepgram/sdk';
+import OpenAI from 'openai';
+import { Room, RemoteTrack } from 'livekit-server-sdk';
 
 dotenv.config();
 
