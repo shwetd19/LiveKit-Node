@@ -1,5 +1,6 @@
 require("dotenv").config();
 const WebSocket = require("ws");
+const axios = require("axios"); // Ensure axios is installed and required
 const { OpenAI } = require("openai");
 const { Deepgram } = require("@deepgram/sdk");
 
@@ -80,10 +81,11 @@ async function entrypoint() {
       const stream = response.choices[0].message.content;
       console.log(stream);
 
-      const ttsStream = await deepgram.transcription.preRecorded({
-        url: stream,
+      // Update this part based on the new SDK documentation
+      const transcription = await deepgram.transcription.preRecorded({
+        audio_url: stream, // Ensure this is correct as per new SDK
       });
-      console.log(ttsStream);
+      console.log(transcription);
     } catch (err) {
       console.error(`Error answering: ${err.message}`);
     }
