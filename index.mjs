@@ -1,9 +1,9 @@
-import dotenv from 'dotenv';
-import WebSocket from 'ws';
-import axios from 'axios';
-import { Deepgram } from '@deepgram/sdk';
-import OpenAI from 'openai';
-import { Room, RemoteTrack } from 'livekit-server-sdk';
+import dotenv from "dotenv";
+import WebSocket from "ws";
+import axios from "axios";
+import { Deepgram } from "@deepgram/sdk";
+import OpenAI from "openai";
+import { Room, RemoteTrack } from "livekit-server-sdk";
 
 dotenv.config();
 
@@ -58,16 +58,14 @@ async function entrypoint(ctx) {
       {
         role: "system",
         content:
-          "Your name is Alloy. You are a funny, witty bot. Your interface with users will be voice and vision. Respond with short and concise answers. Avoid using unpronouncable punctuation or emojis.",
+          "Your name is Alloy. You are a funny, witty bot. Your interface with users will be voice and vision. Respond with short and concise answers. Avoid using unpronounceable punctuation or emojis.",
       },
     ],
   };
 
-  const gpt = new openai.ChatCompletion({
-    model: "gpt-4",
-  });
+  const gpt = openai.chat.completions.create.bind(openai.chat.completions);
 
-  const latestImage = null;
+  let latestImage = null;
 
   const assistantFunction = new AssistantFunction();
 
@@ -80,7 +78,8 @@ async function entrypoint(ctx) {
     chatContext.messages.push({ role: "user", content });
 
     try {
-      const response = await gpt.create({
+      const response = await gpt({
+        model: "gpt-4",
         messages: chatContext.messages,
       });
 
@@ -136,6 +135,7 @@ const ws = new WebSocket(process.env.LIVEKIT_URL);
 
 ws.on("open", () => {
   console.log("Connected to LiveKit");
+  // Assuming `ctx` is defined and initialized properly
   // Call entrypoint here with the necessary context
 });
 
