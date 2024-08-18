@@ -8,8 +8,11 @@ const { Deepgram } = require("@deepgram/sdk");
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+// Initialize Deepgram with the correct format
 const deepgram = new Deepgram(process.env.DEEPGRAM_API_KEY);
 
+// WebSocket connection
 const ws = new WebSocket(process.env.LIVEKIT_URL);
 
 class AssistantFunction {
