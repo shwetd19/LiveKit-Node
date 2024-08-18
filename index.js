@@ -5,11 +5,10 @@ const { Deepgram } = require("@deepgram/sdk");
 const OpenAI = require("openai");
 const {
   Room,
-  RemoteVideoTrack,
-  ChatManager,
-  ChatMessage,
-  VideoStream,
-} = require("@livekit/server-sdk");
+  Participant,
+  TrackPublication,
+  RemoteTrack,
+} = require("livekit-server-sdk");
 
 const deepgram = new Deepgram(process.env.DEEPGRAM_API_KEY);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -34,7 +33,7 @@ async function getVideoTrack(room) {
       )) {
         if (
           trackPublication.track &&
-          trackPublication.track instanceof RemoteVideoTrack
+          trackPublication.track instanceof RemoteTrack
         ) {
           clearTimeout(timer);
           resolve(trackPublication.track);
@@ -101,7 +100,7 @@ async function entrypoint(ctx) {
     }
   }
 
-  const chat = new ChatManager(ctx.room);
+  const chat = new Room(ctx.room);
 
   chat.on("message_received", (msg) => {
     if (msg.message) {
@@ -127,7 +126,7 @@ async function entrypoint(ctx) {
   while (ctx.room.connectionState === "connected") {
     const videoTrack = await getVideoTrack(ctx.room);
     if (videoTrack) {
-      for await (const event of VideoStream(videoTrack)) {
+      for await (const event of videoTrack) {
         latestImage = event.frame;
       }
     } else {
