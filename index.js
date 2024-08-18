@@ -9,7 +9,7 @@ const {
   ChatManager,
   ChatMessage,
   VideoStream,
-} = require("@livekit/node");
+} = require("@livekit/server-sdk");
 
 const deepgram = new Deepgram(process.env.DEEPGRAM_API_KEY);
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
